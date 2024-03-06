@@ -1,16 +1,17 @@
-from typing import Dict, List, Sequence, Tuple
-import lightning as L
 import logging
-import torch
 import os
 import sys
-from .options import Options
 from pprint import pformat
-from .utils import default, create_or_recreate_folder, is_debug_run
+from typing import Dict, List, Sequence, Tuple
+
+import lightning as L
+import torch
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
 from mdutils.mdutils import MdUtils
-from ..callbacks.callback import Callback
 
+from ..callbacks.callback import Callback
+from .options import Options
+from .utils import create_or_recreate_folder, default, is_debug_run
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def get_experiment_root(options: Options, with_script_directory_prefix: bool = T
     prefix = ''
     if with_script_directory_prefix:
         prefix = os.path.basename(os.path.dirname(os.path.abspath(sys.argv[0])))
-        
+
     if options.data.root_current_experiment is None:
         root = default('EXPERIMENT_ROOT', default_value=None)
         if root is None:
@@ -28,7 +29,7 @@ def get_experiment_root(options: Options, with_script_directory_prefix: bool = T
             return f'/tmp/experiments/{prefix}'
         else:
             return os.path.join(root, prefix)
-        
+
     return options.data.root_current_experiment
 
 
@@ -39,26 +40,27 @@ def setup_folders(experiment_folder: str, options: Options) -> str:
 
     if not is_debug:
         # protect against unfortunate experiment re-run and previous results destruction
-        assert not os.path.exists(experiment_folder), f'experiment_folder={experiment_folder} '\
-            'already exists! It must be manually removed!'
+        assert not os.path.exists(experiment_folder), (
+            f'experiment_folder={experiment_folder} ' 'already exists! It must be manually removed!'
+        )
 
     # only rank 0 is responsible for logging in DDP
     create_or_recreate_folder(experiment_folder)
 
     logger = logging.getLogger(__name__)
     logging.basicConfig(
-        filename=os.path.join(experiment_folder, f'trainer_logging_rank.log'),
+        filename=os.path.join(experiment_folder, 'trainer_logging_rank.log'),
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
         level=logging.INFO,
-        filemode='w'
+        filemode='w',
     )
     logger.info('Training started!')
 
-    # redirect the lightning logs to a file 
+    # redirect the lightning logs to a file
     logger_lightning = logging.getLogger('lightning.pytorch')
     logging.getLogger('lightning.pytorch').setLevel(logging.INFO)
-    logger_lightning.addHandler(logging.FileHandler(os.path.join(experiment_folder, f'pytorch_lightning_rank.log')))
-    print(f'logging initialized!')
+    logger_lightning.addHandler(logging.FileHandler(os.path.join(experiment_folder, 'pytorch_lightning_rank.log')))
+    print('logging initialized!')
 
     options_str = pformat(options, indent=3)
     logger_lightning.info(f'options=\n{options_str}')
@@ -66,12 +68,18 @@ def setup_folders(experiment_folder: str, options: Options) -> str:
     return experiment_folder
 
 
-def load_model(pretraining: str, model_pl: torch.nn.Module, strict: bool = True, discard_keys: Sequence[str] = ('.dice.')) -> Tuple[List[str], List[str]]:
+def load_model(
+    pretraining: str,
+    model_pl: torch.nn.Module,
+    strict: bool = True,
+    discard_keys: Sequence[str] = ('.dice.'),
+) -> Tuple[List[str], List[str]]:
     """
     Load model from a file.
 
     Parameters:
-        discard_keys: if `strict`, relax this constraint by allowing some known keys not to be loaded. (e.g., `monai.loss.dice.Dice` class weight)
+        discard_keys: if `strict`, relax this constraint by allowing some known keys not to be loaded.
+            (e.g., `monai.loss.dice.Dice` class weight)
     """
     model_state = torch.load(pretraining, map_location=torch.device('cpu'))
     if 'state_dict' in model_state:
@@ -94,7 +102,12 @@ def load_model(pretraining: str, model_pl: torch.nn.Module, strict: bool = True,
     return missing_keys, additional_keys
 
 
-def start_training(options: Options, datasets_loaders: Dict, callbacks: Sequence[L.Callback], model_pl: L.LightningModule):
+def start_training(
+    options: Options,
+    datasets_loaders: Dict,
+    callbacks: Sequence[L.Callback],
+    model_pl: L.LightningModule,
+) -> None:
     logger.info('Training Starting...')
     experiment_root = get_experiment_root(options, with_script_directory_prefix=options.data.with_script_directory_prefix)
     root_current_experiment = os.path.join(experiment_root, os.path.basename(sys.argv[0]).replace('.py', ''))
@@ -112,9 +125,12 @@ def start_training(options: Options, datasets_loaders: Dict, callbacks: Sequence
     logger_tb = L.pytorch.loggers.TensorBoardLogger(save_dir=options.data.root_current_experiment)
     logger_csv = L.pytorch.loggers.CSVLogger(save_dir=options.data.root_current_experiment)
 
-
     # load only the state of the model, NOT the state of the training!
-    if hasattr(options.training, 'pretraining') and options.training.pretraining is not None and len(options.training.pretraining) > 0:
+    if (
+        hasattr(options.training, 'pretraining')
+        and options.training.pretraining is not None
+        and len(options.training.pretraining) > 0
+    ):
         load_model(options.training.pretraining, model_pl)
 
     if hasattr(options.workflow, 'limit_train_batches'):
@@ -126,25 +142,25 @@ def start_training(options: Options, datasets_loaders: Dict, callbacks: Sequence
         limit_val_batches = options.workflow.limit_val_batches
     else:
         limit_val_batches = None
-    
+
     L.pytorch.seed_everything(workers=True)
     trainer = L.Trainer(
-        accumulate_grad_batches=int(options.training.accumulate_grad_batches), 
+        accumulate_grad_batches=int(options.training.accumulate_grad_batches),
         accelerator=options.training.accelerator,
         gradient_clip_val=options.training.gradient_clip_val,
         # force using a specific device
-        devices=[int(d) for d in options.training.devices.split(',')], 
+        devices=[int(d) for d in options.training.devices.split(',')],
         logger=[logger_csv, logger_tb],
         max_epochs=int(options.training.nb_epochs),
         default_root_dir=options.data.root_current_experiment,
-        precision=options.training.precision,
-        callbacks=callbacks,
+        precision=options.training.precision,  # type: ignore
+        callbacks=callbacks,  # type: ignore
         num_sanity_val_steps=0,
-        #amp_backend='native',
+        # amp_backend='native',
         enable_progress_bar=options.workflow.enable_progress_bar,
-        limit_train_batches=limit_train_batches, 
+        limit_train_batches=limit_train_batches,
         limit_val_batches=limit_val_batches,
-        #strategy=pl.strategies.ddp.DDPStrategy(find_unused_parameters=False),
+        # strategy=pl.strategies.ddp.DDPStrategy(find_unused_parameters=False),
         strategy=L.pytorch.strategies.ddp.DDPStrategy(find_unused_parameters=True),
         enable_model_summary=False,  # we will have one configured in the callbacks,
         check_val_every_n_epoch=options.training.check_val_every_n_epoch,
@@ -153,7 +169,7 @@ def start_training(options: Options, datasets_loaders: Dict, callbacks: Sequence
         gradient_clip_algorithm=options.training.gradient_clip_algorithm,
     )
 
-    trainer.options = options
+    trainer.options = options  # type: ignore
 
     # possibly reload ALL the states (model & training)
     checkpoint = options.training.checkpoint if hasattr(options.training, 'checkpoint') else None
@@ -163,8 +179,8 @@ def start_training(options: Options, datasets_loaders: Dict, callbacks: Sequence
     dataset_name = next(iter(datasets_loaders.keys()))
 
     trainer.fit(
-        model=model_pl, 
-        train_dataloaders=datasets_loaders[dataset_name].get('train'), 
+        model=model_pl,
+        train_dataloaders=datasets_loaders[dataset_name].get('train'),
         val_dataloaders=datasets_loaders[dataset_name].get('valid'),
         ckpt_path=checkpoint,
     )
@@ -172,7 +188,7 @@ def start_training(options: Options, datasets_loaders: Dict, callbacks: Sequence
     logger.info('Training DONE!')
 
     md_report_path = os.path.join(root_current_experiment, 'experiment_report.md')
-    md = MdUtils(file_name=md_report_path, title=f'Report')
+    md = MdUtils(file_name=md_report_path, title='Report')
     for callback in callbacks:
         if isinstance(callback, Callback):
             try:

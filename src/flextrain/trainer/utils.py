@@ -2,13 +2,13 @@ import json
 import os
 import shutil
 from types import SimpleNamespace
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from ..types import *
+from ..types import Batch, Datasets
 
 
 def default(env_name: str, default_value: Any, output_type: Any = str) -> Any:
@@ -60,7 +60,7 @@ def transfer_batch_to_device(
     return device_batch
 
 
-def create_or_recreate_folder(path: str, nb_tries: bool = 3, wait_time_between_tries: float = 2.0) -> None:
+def create_or_recreate_folder(path: str, nb_tries: int = 3, wait_time_between_tries: float = 2.0) -> bool:
     """
     Check if the path exist. If yes, remove the folder then recreate the folder, else create it
 
@@ -76,7 +76,7 @@ def create_or_recreate_folder(path: str, nb_tries: bool = 3, wait_time_between_t
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
 
-    def try_create():
+    def try_create() -> bool:
         try:
             os.makedirs(path, exist_ok=True)
             return True
@@ -108,7 +108,7 @@ def dict_as_namespace(d: Dict) -> SimpleNamespace:
     return x
 
 
-def get_device(module: torch.nn.Module, batch: Batch = None) -> Optional[torch.device]:
+def get_device(module: torch.nn.Module, batch: Optional[Batch] = None) -> Optional[torch.device]:
     """
     Return the device of a module. This may be incorrect if we have a module split across different devices
     """
@@ -155,7 +155,7 @@ def is_debug_run() -> bool:
     return started_from_vs
 
 
-def safe_lookup(dictionary: Dict, *keys, default: Any = None):
+def safe_lookup(dictionary: Dict, *keys: str, default: Any = None) -> Union[Dict, Any]:
     """
     Recursively access nested dictionaries
 
@@ -171,14 +171,14 @@ def safe_lookup(dictionary: Dict, *keys, default: Any = None):
         return default
 
     for key in keys:
-        dictionary = dictionary.get(key)
+        dictionary = dictionary.get(key)  # type: ignore
         if dictionary is None:
             return default
 
     return dictionary
 
 
-def safe_lookup_ns(ns: SimpleNamespace, *keys, default: Any = None) -> Optional[str]:
+def safe_lookup_ns(ns: SimpleNamespace, *keys: str, default: Optional[Union[str, Any]] = None) -> Optional[Union[str, Any]]:
     """
     Recursively access nested namespace
 
@@ -199,7 +199,9 @@ def safe_lookup_ns(ns: SimpleNamespace, *keys, default: Any = None) -> Optional[
     return ns
 
 
-def make_dataloaders_from_datasets(datasets: Datasets, num_workers: int, batch_size: int):
+def make_dataloaders_from_datasets(
+    datasets: Datasets, num_workers: int, batch_size: int
+) -> Dict[str, Dict[str, DataLoader]]:
     """
     Create the data loaders based on dataset/split
     """
@@ -211,7 +213,7 @@ def make_dataloaders_from_datasets(datasets: Datasets, num_workers: int, batch_s
     data_loader_args_train = {
         # can't have this option if no worker
         'persistent_workers': num_workers
-        > 0
+        > 0,
     }
 
     # for reproducibility in the test/validation datasets
@@ -223,7 +225,7 @@ def make_dataloaders_from_datasets(datasets: Datasets, num_workers: int, batch_s
         'generator': g,
     }
 
-    def seed_worker(worker_id):
+    def seed_worker(worker_id: int) -> None:
         # create a different seed for each
         # worker, else augmentations would be identical!
         worker_seed = 0 + worker_id
@@ -239,7 +241,11 @@ def make_dataloaders_from_datasets(datasets: Datasets, num_workers: int, batch_s
         for split_name, split in splits.items():
             if is_training_split(split_name):
                 data_loader = DataLoader(
-                    dataset=split, num_workers=num_workers, batch_size=batch_size, shuffle=True, **data_loader_args_train
+                    dataset=split,
+                    num_workers=num_workers,
+                    batch_size=batch_size,
+                    shuffle=True,
+                    **data_loader_args_train,
                 )
             else:
                 data_loader = DataLoader(
@@ -247,8 +253,8 @@ def make_dataloaders_from_datasets(datasets: Datasets, num_workers: int, batch_s
                     num_workers=num_workers,
                     batch_size=batch_size,
                     shuffle=False,
-                    **data_loader_args_other,
                     worker_init_fn=seed_worker,
+                    **data_loader_args_other,
                 )
             dataset_loader[split_name] = data_loader
         datasets_loaders[dataset_name] = dataset_loader
@@ -277,9 +283,6 @@ def len_batch(batch: Batch) -> int:
         if isinstance(values, np.ndarray) and len(values.shape) != 0:
             return values.shape[0]
     return 0
-
-
-from typing import Union
 
 
 def bytes2human(n: Union[int, float]) -> str:
