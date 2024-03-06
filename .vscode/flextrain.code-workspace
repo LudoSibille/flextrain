@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../flexdat"
+		}
+	],
+	"settings": {
+        "python.testing.pytestEnabled": true
+    }
+}

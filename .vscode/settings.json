@@ -1,0 +1,30 @@
+{
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.analysis.extraPaths":  ["${workspaceFolder}/src"],  // pylance
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.egg-info": true,
+        ".pytest_cache": true,
+        ".coverage": true,
+        ".mypy_cache": true,
+        "lcov.info": true,
+    },
+    "files.watcherExclude": {
+        "**/.git/**": true,
+    },
+    "cSpell.words": [
+        "flexdat",
+        "NZYX"
+    ],
+    "cmake.configureOnOpen": false,
+    "mypy-type-checker.reportingScope": "workspace",  // make sure the "pyproject.toml" config is read!
+}

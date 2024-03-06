@@ -1,0 +1,114 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flex.train"
+version = "2024.1.31"
+dependencies = [
+  "numpy", 
+  "torch",
+  "SimpleITK",
+  "lightning >= 2.0",
+  "torchmetrics",
+  "torchvision",
+  "tensorboard",
+  "monai",
+  "matplotlib",
+  "scipy",
+  "scikit-learn",
+  "seaborn",
+  "mdutils",
+  # mem leak for later version https://github.com/HDFGroup/hdf5/issues/1256  workaround: install using conda: conda install h5py 
+  "h5py",
+]
+requires-python = ">= 3.10"
+authors=[{name = "Ludovic Sibille", email = "civodlu@gmail.com"}]
+description="Extensions for torch Dataset"
+readme="README.md"
+license = {text = "MIT License"}
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "pytest-cov[all]",
+  "genbadge[all]",
+]
+lint = [
+  "black",
+  "flake8",
+]
+docs = [
+  "sphinx",
+  "sphinx-autodoc-typehints",
+  "sphinx-autoapi",
+  "sphinxcontrib-napoleon",
+  "sphinx_rtd_theme",
+]
+typing = [
+  "mypy",
+]
+extended=[
+  "monai-generative", "dctorch"
+]
+all=[
+  "flex.dat[test, lint, docs, typing, extended]"
+]
+
+[project.urls]
+Homepage = "https://example.com"
+Documentation = "https://readthedocs.org"
+Repository = "https://github.com/civodlu/flextrain"
+Issues = "https://github.com/civodlu/flextrain/issues"
+Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=term  --cov-report=html:ci/html  --cov-report=lcov:ci/lcov.info  --cov-report=xml:ci/coverage.xml --junitxml=ci/junit/junit.xml"
+testpaths = [
+    "tests",
+]
+pythonpath = "."
+norecursedirs = [
+  "*.egg",
+  ".eggs",
+  "dist",
+  "build"
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.isort]
+profile = "black"
+
+[tool.pylint.format]
+max-line-length = 125
+
+[tool.black]
+skip-string-normalization = 1
+line-length = 125
+
+[tool.mypy]
+python_version = "3.10"
+disallow_untyped_defs = true
+show_error_codes = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_ignores = true
+exclude = [
+  "scripts", 
+  "docs", 
+  "tests", 
+]
+explicit_package_bases = 1
+ignore_missing_imports = 1
+allow_redefinition = 1
+
+[tool.setuptools.packages.find]
+where = ["src"]
