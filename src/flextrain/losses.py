@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable, Dict, Literal, Optional, Sequence, Tuple
 
-import numpy as np
 import torch
 from torch import nn
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -31,7 +30,7 @@ class LossSupervised(nn.Module):
         batch_key: str,
         weight: float = 1.0,
         post_process_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
-        fn_target: Callable[[torch.Tensor], torch.Tensor] = None,
+        fn_target: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         convert_target_to_output_type: bool = False,
     ):
         """
@@ -47,7 +46,7 @@ class LossSupervised(nn.Module):
         self.convert_target_to_output_type = convert_target_to_output_type
         self.fn_target = fn_target
 
-    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs) -> LossOutput:
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         output_target = batch[self.batch_key]
         if self.fn_target is not None:
             output_target = self.fn_target(output_target)
@@ -67,7 +66,7 @@ class LossSupervised(nn.Module):
         return LossOutput({}, {self.fn_name: loss * self.weight})
 
 
-def squeeze_target_int(t):
+def squeeze_target_int(t: torch.Tensor) -> torch.Tensor:
     assert t.shape[1] == 1, f'got={t.shape}'
     assert t.dtype in (torch.int8, torch.uint8, torch.int16, torch.int32, torch.int64)
     return t[:, 0].type(torch.long)
@@ -110,8 +109,8 @@ class LossPerceptual(nn.Module):
         self.batch_key = batch_key
         self.input_transform_fn = input_transform_fn
 
-    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs) -> LossOutput:
-        metrics = {}
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
+        metrics: Dict[str, torch.Tensor] = {}
         losses = {}
 
         with torch.no_grad():
@@ -125,11 +124,11 @@ class LossPerceptual(nn.Module):
 
 
 class LossCombine(nn.Module):
-    def __init__(self, **losses) -> None:
+    def __init__(self, **losses: Any) -> None:
         super().__init__()
         self.losses = nn.ModuleDict(losses)
 
-    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs) -> LossOutput:
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         metrics_all = {}
         losses_all = {}
         for loss_name, loss_fn in self.losses.items():
@@ -148,13 +147,13 @@ class LossCombine(nn.Module):
 class _LossTorchMetrics(nn.Module):
     def __init__(
         self,
-        metric_fn,
+        metric_fn: Any,
         batch_key: str,
         fn_name: str,
         weight: float = 1.0,
-        input_preprocessing_fn=lambda x: x,
-        loss_postprocessing_fn=lambda x: 1.0 - x,
-        **torchmetric_kwargs,
+        input_preprocessing_fn: Callable[[torch.Tensor], torch.Tensor] = lambda x: x,
+        loss_postprocessing_fn: Callable[[torch.Tensor], torch.Tensor] = lambda x: 1.0 - x,
+        **torchmetric_kwargs: Any,
     ) -> None:
         super().__init__()
 
@@ -174,8 +173,9 @@ class _LossTorchMetrics(nn.Module):
             post_process_fn=loss_postprocessing_fn,
         )
 
-    def forward(self, batch: Batch, model_output: torch.Tensor) -> LossOutput:
-        return self.loss_fn(batch, model_output)
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
+        loss: LossOutput = self.loss_fn(batch, model_output)
+        return loss
 
 
 class LossSSIM(_LossTorchMetrics):
@@ -184,10 +184,10 @@ class LossSSIM(_LossTorchMetrics):
         batch_key: str,
         data_range: Tuple[float, float],
         weight: float = 1,
-        input_preprocessing_fn=lambda x: x,
-        **torchmetric_kwargs,
+        input_preprocessing_fn: Callable[[torch.Tensor], torch.Tensor] = lambda x: x,
+        **torchmetric_kwargs: Any,
     ) -> None:
-        assert isinstance(data_range, Tuple), 'range must be specified as a tuple (min, max) values'
+        assert isinstance(data_range, tuple), 'range must be specified as a tuple (min, max) values'
         assert len(data_range) == 2, 'min/max values!'
 
         super().__init__(
@@ -202,10 +202,11 @@ class LossSSIM(_LossTorchMetrics):
             **torchmetric_kwargs,
         )
 
-    def forward(self, batch: Batch, model_output: torch.Tensor) -> LossOutput:
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         # min_value = model_output.min()
         # if min_value < 0:
-        # see https://www.researchgate.net/publication/358308582_On_the_proper_use_of_structural_similarity_for_the_robust_evaluation_of_medical_image_synthesis_models
+        # see https://www.researchgate.net/publication/
+        # 358308582_On_the_proper_use_of_structural_similarity_for_the_robust_evaluation_of_medical_image_synthesis_models
         #    warnings.warn(f'LossSSIM should be used only with values >= 0. Got={min_value}')
         return super().forward(batch, model_output)
 
@@ -216,10 +217,10 @@ class LossMSSSIM(_LossTorchMetrics):
         batch_key: str,
         data_range: Tuple[float, float],
         weight: float = 1,
-        input_preprocessing_fn=lambda x: x,
-        **torchmetric_kwargs,
+        input_preprocessing_fn: Callable[[torch.Tensor], torch.Tensor] = lambda x: x,
+        **torchmetric_kwargs: Any,
     ) -> None:
-        assert isinstance(data_range, Tuple), 'range must be specified as a tuple (min, max) values'
+        assert isinstance(data_range, tuple), 'range must be specified as a tuple (min, max) values'
         assert len(data_range) == 2, 'min/max values!'
 
         super().__init__(
@@ -234,10 +235,11 @@ class LossMSSSIM(_LossTorchMetrics):
             **torchmetric_kwargs,
         )
 
-    def forward(self, batch: Batch, model_output: torch.Tensor) -> LossOutput:
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         # min_value = model_output.min()
         # if min_value < 0:
-        # see https://www.researchgate.net/publication/358308582_On_the_proper_use_of_structural_similarity_for_the_robust_evaluation_of_medical_image_synthesis_models
+        # see https://www.researchgate.net/publication/
+        # 358308582_On_the_proper_use_of_structural_similarity_for_the_robust_evaluation_of_medical_image_synthesis_models
         #    warnings.warn(f'LossSSIM should be used only with values >= 0. Got={min_value}')
         return super().forward(batch, model_output)
 
@@ -319,7 +321,7 @@ def contrastive_loss(x1: TorchTensorNX, x2: TorchTensorNX, same_class: TorchTens
     assert same_class.max() <= 1  # 0 = dissimilar, 1 = similar
     assert same_class.shape == (len(x1),)
 
-    loss = same_class * dist**2 + torch.clamp(margin - dist, min=0.0) ** 2
+    loss: torch.Tensor = same_class * dist**2 + torch.clamp(margin - dist, min=0.0) ** 2
     return loss
 
 
@@ -346,7 +348,7 @@ class LossRanking(nn.Module):
         self.true_ordering_fn = true_ordering_fn
         self.margin = margin
 
-    def forward(self, batches: Sequence[Batch], outputs: Sequence[torch.Tensor]) -> LossOutput:
+    def forward(self, batches: Sequence[Batch], outputs: Sequence[torch.Tensor], **kwargs: Any) -> LossOutput:
         assert len(outputs) == 2
         assert len(batches) == 2
         true_ordering = self.true_ordering_fn(batches[0], batches[1])
@@ -363,7 +365,7 @@ class LossCrossEntropy(nn.Module):
         super().__init__()
         self.target_name = target_name
 
-    def forward(self, batch: Batch, model_output: torch.Tensor) -> LossOutput:
+    def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         targets = batch[self.target_name]
         assert len(model_output) == len(targets)
         if targets.shape == (len(targets), 1):
