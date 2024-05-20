@@ -361,6 +361,10 @@ class LossRanking(nn.Module):
 
 
 class LossCrossEntropy(nn.Module):
+    """
+    Calculate the cross entropy between logit (multiclass) and a target (ordinal)
+    """
+
     def __init__(self, target_name: str):
         super().__init__()
         self.target_name = target_name
@@ -368,8 +372,16 @@ class LossCrossEntropy(nn.Module):
     def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         targets = batch[self.target_name]
         assert len(model_output) == len(targets)
-        if targets.shape == (len(targets), 1):
+        if len(model_output.shape) == len(targets.shape):
+            # For an input NC[D]HW, pytorch expects to have N x [D]HW as target
+            # In this framework, target is N1[D]HW
+            assert targets.shape[1] == 1
+            assert model_output.shape[2:] == targets.shape[2:]
             targets = targets.squeeze(1)
+
+        if targets.dtype in (torch.int8, torch.int16, torch.int32, torch.uint8):
+            targets = targets.type(torch.int64)
+
         loss = nn.functional.cross_entropy(model_output, targets, reduction='none')
-        accuracy = (model_output.argmax(dim=1) == targets).sum().float().cpu() / len(model_output)
+        accuracy = (model_output.argmax(dim=1) == targets).sum().float().cpu() / targets.nelement()
         return LossOutput({'1-accuracy': 1.0 - accuracy}, {'ce': loss})
