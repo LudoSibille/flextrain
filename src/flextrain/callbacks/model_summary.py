@@ -1,13 +1,14 @@
-import lightning as L
-from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
-import torch
-from torch import nn
-from typing import Any, Sequence
 import logging
-from .autoencoder import get_batch_iter
-from ..trainer.utils import transfer_batch_to_device, number2human
 from dataclasses import dataclass
+from typing import Any, Sequence
 
+import lightning as L
+import torch
+from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
+from torch import nn
+
+from ..trainer.utils import number2human, transfer_batch_to_device
+from .autoencoder import get_batch_iter
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +22,23 @@ class Summary:
 
 def _flops(module: nn.Module, output):
     # very rough approximation...
-    if output.dim() < 3:
-        return output.numel()
-    if output.dim() == 4:
-        *_, h, w = output.shape
-        return output.numel() * h * w
-    if output.dim() == 5:
-        *_, d, h, w = output.shape
-        return output.numel() * h * w * d
+    if isinstance(output, torch.Tensor):
+        if output.dim() < 3:
+            return output.numel()
+        if output.dim() == 4:
+            *_, h, w = output.shape
+            return output.numel() * h * w
+        if output.dim() == 5:
+            *_, d, h, w = output.shape
+            return output.numel() * h * w * d
     return None
+
+
+def get_shape(output):
+    if isinstance(output, list):
+        os = [get_shape(o) for o in output]
+        return os
+    return tuple(output.shape)
 
 
 class HookRecordModuleInfo:
@@ -47,7 +56,7 @@ class HookRecordModuleInfo:
                 input_shape.append(type(i).__name__)
         input_shape_str = ','.join(input_shape)
         nparams = sum(o.numel() for o in module.parameters())
-        
+
         flops = _flops(module, output)
         if flops is None:
             flops = '???'
@@ -55,7 +64,7 @@ class HookRecordModuleInfo:
             self.output_summary.total_flops += flops
             flops = number2human(flops)
 
-        layer_str = f'{type(module).__name__:20}|{input_shape_str:40}|{str(tuple(output.shape)):25}|{number2human(nparams):10}|{flops:10}\n'
+        layer_str = f'{type(module).__name__:20}|{input_shape_str:40}|{str(get_shape(output)):25}|{number2human(nparams):10}|{flops:10}\n'
         self.output_summary.string += layer_str
         self.output_summary.total_parameters += nparams
 
@@ -67,11 +76,12 @@ class HookRecordModuleInfo:
     def __del__(self):
         self.remove()
 
-     
+
 class CallbackModelSummary(L.Callback):
     """
     Log important metrics for each epoch
     """
+
     def __init__(self, layers_to_discard=(nn.Sequential,)) -> None:
         super().__init__()
         self.layers_to_discard = layers_to_discard
@@ -80,13 +90,13 @@ class CallbackModelSummary(L.Callback):
     @rank_zero_only
     def on_train_epoch_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         if self.recorded:
-            return 
-        
+            return
+
         self.recorded = True
         device = pl_module.device
         batch = next(get_batch_iter(trainer))
         batch = transfer_batch_to_device(batch, device)
-        
+
         hooks = []
         output_summary = Summary()
         for m in pl_module.modules():
@@ -110,5 +120,5 @@ class CallbackModelSummary(L.Callback):
         print(f'total trainable parameters={number2human(output_summary.total_parameters)}')
         print(f'total FLOPS={number2human(output_summary.total_flops)}')
         logger.info(f'Model summary:\n{output_summary.string}')
-        logger.info(f'total trainable parameters={number2human(output_summary.total_parameters)}')   
+        logger.info(f'total trainable parameters={number2human(output_summary.total_parameters)}')
         logger.info(f'total FLOPS={number2human(output_summary.total_flops)}')
