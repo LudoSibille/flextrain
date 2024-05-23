@@ -27,6 +27,11 @@ def process_loss_outputs(model: L.LightningModule, loss_outputs: LossOutput, bat
         # 'batch_size': batch_size
     }
 
+    def to_device(v: Any) -> torch.Tensor:
+        if isinstance(v, torch.Tensor):
+            return v.to(model.device)
+        return torch.tensor(v, device=model.device)
+
     loss: torch.Tensor = 0
     for loss_name, loss_by_sample in loss_outputs.losses.items():
         if len(loss_by_sample.shape) == 0 or len(loss_by_sample) != batch_size:
@@ -34,14 +39,38 @@ def process_loss_outputs(model: L.LightningModule, loss_outputs: LossOutput, bat
         # assert len(loss_by_sample.shape) >= 1 and len(loss_by_sample) == batch_size
         current_loss = loss_by_sample.mean()
         loss += current_loss
-        model.log(f'loss_{loss_name}{loss_name_postfix}', current_loss, prog_bar=len(loss_outputs.losses) == 1, **kwargs)
+        model.log(
+            f'loss_{loss_name}{loss_name_postfix}',
+            # current_loss,
+            to_device(current_loss),
+            prog_bar=len(loss_outputs.losses) == 1,
+            batch_size=batch_size,
+            sync_dist=True,
+            **kwargs,
+        )
 
     if len(loss_outputs.losses) > 1:
-        model.log(f'loss{loss_name_postfix}', loss, prog_bar=True, **kwargs)
+        model.log(
+            f'loss{loss_name_postfix}',
+            # loss,
+            to_device(loss),
+            prog_bar=True,
+            batch_size=batch_size,
+            sync_dist=True,
+            **kwargs,
+        )
 
     for metric_name, metric_by_sample in loss_outputs.metrics.items():
         metric = metric_by_sample.mean()
-        model.log(f'metric_{metric_name}{loss_name_postfix}', metric, prog_bar=False, **kwargs)
+        model.log(
+            f'metric_{metric_name}{loss_name_postfix}',
+            # metric,
+            to_device(metric),
+            prog_bar=False,
+            batch_size=batch_size,
+            sync_dist=True,
+            **kwargs,
+        )
 
     return loss
 
