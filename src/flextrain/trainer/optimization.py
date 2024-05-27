@@ -35,7 +35,10 @@ class _PolyLRScheduler(torch.optim.lr_scheduler.LRScheduler):
         self.max_steps = max_steps
         self.exponent = exponent
         self.ctr = 0
-        super().__init__(optimizer, current_step if current_step is not None else -1, False)
+        super().__init__(
+            optimizer=optimizer,
+            last_epoch=current_step if current_step is not None else -1,
+        )
 
     def step(self, current_step: Optional[int] = None) -> None:
         if current_step is None or current_step == -1:

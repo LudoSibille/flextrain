@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 
 class SimpleRepr(object):
@@ -18,7 +18,7 @@ class Training(SimpleRepr):
     def __init__(
         self,
         nb_epochs: int = 100,
-        precision: int = 32,
+        precision: Union[int, Literal['16', '32', '16-mixed']] = 32,
         pretraining: str = '',
         accumulate_grad_batches: int = 1,
         accelerator: str = 'gpu',
