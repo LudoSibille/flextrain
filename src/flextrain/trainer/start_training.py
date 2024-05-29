@@ -175,7 +175,7 @@ def start_training(
     checkpoint = options.training.checkpoint if hasattr(options.training, 'checkpoint') else None
 
     # TODO handle multi datasets?
-    assert len(datasets_loaders), f'TODO multi-datasets not handled yet. Datasets={datasets_loaders.keys()}'
+    assert len(datasets_loaders) == 1, f'TODO multi-datasets not handled yet. Datasets={datasets_loaders.keys()}'
     dataset_name = next(iter(datasets_loaders.keys()))
 
     trainer.fit(

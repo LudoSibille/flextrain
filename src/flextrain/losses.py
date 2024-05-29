@@ -365,10 +365,11 @@ class LossCrossEntropy(nn.Module):
     Calculate the cross entropy between logit (multiclass) and a target (ordinal)
     """
 
-    def __init__(self, target_name: str, weight: float = 1.0):
+    def __init__(self, target_name: str, weight: float = 1.0, class_weights: Optional[Tuple[float, ...]] = None):
         super().__init__()
         self.target_name = target_name
         self.weight = weight
+        self.class_weights = torch.asarray(class_weights) if class_weights is not None else None
 
     def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         targets = batch[self.target_name]
@@ -383,6 +384,10 @@ class LossCrossEntropy(nn.Module):
         if targets.dtype in (torch.int8, torch.int16, torch.int32, torch.uint8):
             targets = targets.type(torch.int64)
 
-        loss = nn.functional.cross_entropy(model_output, targets, reduction='none')
+        w = None
+        if self.class_weights is not None:
+            w = self.class_weights.to(model_output.device)
+            assert len(w) == model_output.shape[1]
+        loss = nn.functional.cross_entropy(model_output, targets, reduction='none', weight=w)
         accuracy = (model_output.argmax(dim=1) == targets).sum().float().cpu() / targets.nelement()
         return LossOutput({'1-accuracy': 1.0 - accuracy}, {'ce': loss * self.weight})
