@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, Callable, Dict, Literal, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Literal, Optional, Sequence, Tuple, Union
 
+import numpy as np
 import torch
 from torch import nn
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -365,11 +366,26 @@ class LossCrossEntropy(nn.Module):
     Calculate the cross entropy between logit (multiclass) and a target (ordinal)
     """
 
-    def __init__(self, target_name: str, weight: float = 1.0, class_weights: Optional[Tuple[float, ...]] = None):
+    def __init__(
+        self,
+        target_name: str,
+        weight: float = 1.0,
+        class_weights: Optional[Union[Literal['adaptative'], Tuple[float, ...]]] = None,
+        weight_min_max_adaptative: Tuple[Optional[float], Optional[float]] = (None, None),
+    ):
         super().__init__()
         self.target_name = target_name
         self.weight = weight
-        self.class_weights = torch.asarray(class_weights) if class_weights is not None else None
+        if isinstance(class_weights, str):
+            self.class_weights = class_weights
+            assert class_weights in ('adaptative',)
+        else:
+            self.class_weights = torch.asarray(class_weights) if class_weights is not None else None
+
+        if weight_min_max_adaptative[0] is not None or weight_min_max_adaptative[1] is not None:
+            self.weight_min_max_adaptative = weight_min_max_adaptative
+        else:
+            self.weight_min_max_adaptative = None
 
     def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         targets = batch[self.target_name]
@@ -386,7 +402,16 @@ class LossCrossEntropy(nn.Module):
 
         w = None
         if self.class_weights is not None:
-            w = self.class_weights.to(model_output.device)
+            if self.class_weights == 'adaptative':
+                nb_classes = torch.bincount(torch.flatten(targets), minlength=model_output.shape[1])
+                nb_voxels = torch.prod(torch.asarray(targets.shape), dtype=torch.int64)
+                w = (nb_voxels / nb_classes) / 5
+
+                if self.weight_min_max_adaptative is not None:
+                    w = torch.clip(w, self.weight_min_max_adaptative[0], self.weight_min_max_adaptative[1])
+
+            else:
+                w = self.class_weights.to(model_output.device)
             assert len(w) == model_output.shape[1]
         loss = nn.functional.cross_entropy(model_output, targets, reduction='none', weight=w)
         accuracy = (model_output.argmax(dim=1) == targets).sum().float().cpu() / targets.nelement()
