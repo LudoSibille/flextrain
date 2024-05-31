@@ -1,21 +1,22 @@
-from collections import defaultdict
-import lightning as L
-import os
-import logging
-from pytorch_lightning.utilities import rank_zero_only
-from typing import Sequence, Literal, Callable, Optional, Tuple
-from torch.utils.data import DataLoader
-import numpy as np
-from ..types import Batch
-from ..trainer.utils import to_value, NumpyTorchEncoder
 import json
-from torchvision.utils import make_grid
-import torch
-from PIL import Image
-from .callback import Callback
-from mdutils.mdutils import MdUtils
+import logging
+import os
+from collections import defaultdict
 from glob import glob
+from typing import Any, Callable, Literal, Optional, Sequence, Tuple
 
+import lightning as L
+import numpy as np
+import torch
+from mdutils.mdutils import MdUtils
+from PIL import Image
+from pytorch_lightning.utilities import rank_zero_only
+from torch.utils.data import DataLoader
+from torchvision.utils import make_grid
+
+from ..trainer.utils import NumpyTorchEncoder, to_value
+from ..types import Batch
+from .callback import Callback
 
 logger = logging.getLogger(__name__)
 
@@ -33,28 +34,34 @@ def export_image_2d(image: np.ndarray, path: str, data_range: Optional[Tuple[flo
     Image.fromarray(image_clipped).save(path + '.png')
 
 
-def export_image_3d_slice_mosaic(image: np.ndarray, path: str, nb_slices=9, data_range: Optional[Tuple[float, float]] = None) -> None:
+def export_image_3d_slice_mosaic(
+    image: np.ndarray,
+    path: str,
+    nb_slices: int = 9,
+    data_range: Optional[Tuple[float, float]] = None,
+) -> None:
     slices = np.arange(0, image.shape[0], image.shape[0] / nb_slices).astype(int)
     image_mosaic = make_grid(torch.from_numpy(image[slices]).unsqueeze(1), nrow=int(np.sqrt(nb_slices))).numpy()
 
     if data_range is None:
         data_range = image.min(), image.max()
-    
+
     r = data_range[1] + 1e-5 - data_range[0]
     image_mosaic_clipped = (255 * (np.clip(image_mosaic, data_range[0], data_range[1]) - data_range[0]) / r).astype(np.uint8)
     Image.fromarray(image_mosaic_clipped.transpose((1, 2, 0))).save(path + '.png')
-        
+
 
 def export_single_batch(
-        batch: Batch, 
-        basename: str, 
-        discard_keys=(),
-        export_2d_raw: bool = True, 
-        export_3d_raw: bool = True, 
-        export_image_2d_fn=export_image_2d, 
-        export_image_3d_fn=export_image_3d_slice_mosaic,
-        max_size_np_txt: int = 32) -> None:
-    
+    batch: Batch,
+    basename: str,
+    discard_keys: Sequence[str] = (),
+    export_2d_raw: bool = True,
+    export_3d_raw: bool = True,
+    export_image_2d_fn: Callable[[np.ndarray, str], None] = export_image_2d,
+    export_image_3d_fn: Callable[[np.ndarray, str], None] = export_image_3d_slice_mosaic,
+    max_size_np_txt: int = 32,
+) -> None:
+
     text_dict = {}
     for name, value in batch.items():
         if name in discard_keys:
@@ -83,7 +90,7 @@ def export_single_batch(
                     np.save(base_data_path + '.npy', v)
         else:
             text_dict[name] = v
-    
+
     with open(basename + '.txt', 'w') as f:
         json.dump(text_dict, f, indent=3, cls=NumpyTorchEncoder)
 
@@ -92,16 +99,18 @@ class CallbackRecordSamples(Callback):
     """
     Export samples. This is mostly for validating data pipelines.
     """
+
     def __init__(
-            self, 
-            output_dir_name: str = 'samples', 
-            split_names: Sequence[Literal['train', 'valid', 'test']]=('train', 'valid'), 
-            nb_samples: int = 20, 
-            nb_repeat: int = 1, 
-            export_single_batch_fn: Callable[[Batch, str, Sequence[str]], None] = export_single_batch,
-            discard_keys: Sequence[str] = (),
-            **dataset_index_kwargs):
-        
+        self,
+        output_dir_name: str = 'samples',
+        split_names: Sequence[Literal['train', 'valid', 'test']] = ('train', 'valid'),
+        nb_samples: int = 20,
+        nb_repeat: int = 1,
+        export_single_batch_fn: Callable[[Batch, str, Sequence[str]], None] = export_single_batch,
+        discard_keys: Sequence[str] = (),
+        **dataset_index_kwargs: Any,
+    ):
+
         super().__init__()
         self.output_dir_name = output_dir_name
         self.output_path = None
@@ -112,7 +121,6 @@ class CallbackRecordSamples(Callback):
         self.samples_exported = False
         self.export_single_batch_fn = export_single_batch_fn
         self.discard_keys = discard_keys
-
 
     def _export_sample(self, dataloader: DataLoader, split_name: str) -> None:
         nb_samples = min(len(dataloader.dataset), self.nb_samples)
@@ -130,7 +138,7 @@ class CallbackRecordSamples(Callback):
             self.samples_exported = True
             self.output_path = os.path.join(trainer.options.data.root_current_experiment, self.output_dir_name)
             os.makedirs(self.output_path, exist_ok=True)
-        
+
         logger.info(f'exporting samples={self.output_path}')
         for split_name in self.split_names:
             data_loader = None
@@ -142,18 +150,16 @@ class CallbackRecordSamples(Callback):
                 data_loader = trainer.test_dataloaders
             else:
                 raise ValueError(f'unsupported split name={split_name}')
-            
+
             if data_loader is None:
                 logger.info(f'No dataloader for split={split_name}!')
                 continue
 
             self._export_sample(data_loader, split_name)
 
-
-    def make_markdown_report(self, md: MdUtils, base_level: int = 1):
+    def make_markdown_report(self, md: MdUtils, base_level: int = 1) -> None:
         if self.output_path is None:
             return
-        
+
         # TODO
         images = sorted([p for p in os.listdir(self.output_path) if '.png' in p])
-        pass
