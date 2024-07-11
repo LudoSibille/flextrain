@@ -372,6 +372,7 @@ class LossCrossEntropy(nn.Module):
         weight: float = 1.0,
         class_weights: Optional[Union[Literal['adaptative'], Tuple[float, ...]]] = None,
         weight_min_max_adaptative: Tuple[Optional[float], Optional[float]] = (None, None),
+        reduction: str = 'none',
     ):
         super().__init__()
         self.target_name = target_name
@@ -386,6 +387,7 @@ class LossCrossEntropy(nn.Module):
             self.weight_min_max_adaptative = weight_min_max_adaptative
         else:
             self.weight_min_max_adaptative = None
+        self.reduction = reduction
 
     def forward(self, batch: Batch, model_output: torch.Tensor, **kwargs: Any) -> LossOutput:
         targets = batch[self.target_name]
@@ -413,6 +415,6 @@ class LossCrossEntropy(nn.Module):
             else:
                 w = self.class_weights.to(model_output.device)
             assert len(w) == model_output.shape[1]
-        loss = nn.functional.cross_entropy(model_output, targets, reduction='none', weight=w)
+        loss = nn.functional.cross_entropy(model_output, targets, reduction=self.reduction, weight=w)
         accuracy = (model_output.argmax(dim=1) == targets).sum().float().cpu() / targets.nelement()
         return LossOutput({'1-accuracy': 1.0 - accuracy}, {'ce': loss * self.weight})
