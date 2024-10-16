@@ -11,3 +11,4 @@ lcov.info
 **/coverage.xml
 **/junit.xml
 **/flake8.txt
+/.mypy_cache/
