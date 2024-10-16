@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import torch
 
@@ -14,3 +14,6 @@ TorchTensorNCX = torch.Tensor
 Batch = Dict[str, Any]  # {name: value}
 Dataset = Dict[str, Dict[str, Any]]  # {split_name: {name: value}}
 Datasets = Dict[str, Dict[str, Dataset]]  # {dataset_name: dataset}
+
+
+Transform = Callable[[Batch], Batch]

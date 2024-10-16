@@ -111,6 +111,7 @@ def start_training(
     logger.info('Training Starting...')
     experiment_root = get_experiment_root(options, with_script_directory_prefix=options.data.with_script_directory_prefix)
     root_current_experiment = os.path.join(experiment_root, os.path.basename(sys.argv[0]).replace('.py', ''))
+    root_current_experiment = root_current_experiment + options.data.experiment_name_postfix
     if is_debug_run():
         # treat debug run differently: typically, very short
         # run to excercise the algorithm but not to perform the

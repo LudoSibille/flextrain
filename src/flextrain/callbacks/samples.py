@@ -70,7 +70,8 @@ def export_single_batch(
         v = to_value(value)
         if isinstance(v, np.ndarray):
             v = v.squeeze()
-            if len(v.shape) == 2 and v.size > max_size_np_txt:
+            # 2D grayscale image OR 3D with RGB components
+            if (len(v.shape) == 2 or (len(v.shape) == 3) and v.shape[0] == 3) and v.size > max_size_np_txt:
                 base_data_path = basename + '_' + name
                 export_image_2d_fn(v, base_data_path)
                 if export_2d_raw:

@@ -48,14 +48,19 @@ class ModelAdaptor3to2(nn.Module):
     (10, 1, 3, 64, 64)
     """
 
-    def __init__(self, base_model: nn.Module) -> None:
+    def __init__(self, base_model: nn.Module, allow_2d_input: bool = False) -> None:
         super().__init__()
 
         self.base_model = base_model
+        self.allow_2d_input = allow_2d_input
 
     def forward(self, i: torch.Tensor) -> torch.Tensor:
+        if len(i.shape) == 4 and self.allow_2d_input:
+            # already a 2D input, nothing to do
+            return self.base_model(i)
+
         assert len(i.shape) == 5, f'expecting NCDHW with C=1. Got={i.shape}'
         assert i.shape[1] == 1, f'expecting C=1, got shape={i.shape}'
-        o = self.base_model(i.squeeze_(1))
+        o = self.base_model(i.squeeze(1))  # we need a copy! (cant use squeeze_)
         assert len(o.shape) == 4, f'expecting NCHW. Got={o.shape}'
-        return o.unsqueeze_(1)
+        return o.unsqueeze(1)

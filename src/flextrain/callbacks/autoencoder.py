@@ -1,15 +1,16 @@
 import logging
 import math
-from typing import Callable, Dict, Optional
-import torch
+import os
+from typing import Callable, Dict, Iterator, Optional
+
 import lightning as L
 import numpy as np
-import os
-from PIL import Image
+import torch
 from lightning.pytorch.utilities import rank_zero_only
+from PIL import Image
 from torchvision.utils import make_grid
-from ..trainer.utils import transfer_batch_to_device
 
+from ..trainer.utils import transfer_batch_to_device
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,13 @@ def unnorm_fn(images: torch.Tensor) -> torch.Tensor:
     return images
 
 
-def get_batch_iter(trainer):
-    if trainer.val_dataloaders is not None:
-        batch_iter = iter(trainer.val_dataloaders)
-    else:
+def get_batch_iter(trainer: L.Trainer) -> Iterator:
+    if trainer.val_dataloaders is None:
+        logger.info('Beware: using training validating for sampling!!')
+        assert trainer.train_dataloader is not None
         batch_iter = iter(trainer.train_dataloader)
+    else:
+        batch_iter = iter(trainer.val_dataloaders)
     assert batch_iter is not None, 'no dataloader!'
     return batch_iter
 
@@ -44,25 +47,25 @@ def export_grid(images, path, nb_samples, unnorm_conditioning_fn=None, save_as_n
 
 class CallbackAutoenderRecon(L.Callback):
     def __init__(
-            self, 
-            input_name: str,
-            nb_samples: int = 10,
-            sampling_folder: str = 'recon', 
-            unnorm_truth_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = unnorm_fn,
-            unnorm_output_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = unnorm_fn,
-            encode_kwargs: Dict = {},
-            decode_kwargs: Dict = {},
-            deterministic_seed: bool = True,
-            save_numpy: bool = False,
-            ) -> None:
-        
+        self,
+        input_name: str,
+        nb_samples: int = 10,
+        sampling_folder: str = 'recon',
+        unnorm_truth_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = unnorm_fn,
+        unnorm_output_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = unnorm_fn,
+        encode_kwargs: Dict = {},
+        decode_kwargs: Dict = {},
+        deterministic_seed: bool = True,
+        save_numpy: bool = False,
+    ) -> None:
+
         super().__init__()
         self.nb_samples = nb_samples
         self.input_name = input_name
-        
+
         self.sampling_folder = sampling_folder
-        self.unnorm_truth_fn = unnorm_truth_fn if unnorm_truth_fn is not None else lambda x:x
-        self.unnorm_output_fn = unnorm_output_fn if unnorm_output_fn is not None else lambda x:x
+        self.unnorm_truth_fn = unnorm_truth_fn if unnorm_truth_fn is not None else lambda x: x
+        self.unnorm_output_fn = unnorm_output_fn if unnorm_output_fn is not None else lambda x: x
         self.deterministic_seed = deterministic_seed
 
         self.encode_kwargs = encode_kwargs
@@ -75,11 +78,11 @@ class CallbackAutoenderRecon(L.Callback):
     def on_train_epoch_end(self, trainer, pl_module):
         logger.info('Sampling started!')
         nb_samples = 0
-        
+
         true_batches = []
         image_sampled = []
-        #image_conditioning = []
-        #seeds = []
+        # image_conditioning = []
+        # seeds = []
         batch_n = 0
         batch_iter = get_batch_iter(trainer)
         while nb_samples < self.nb_samples:
@@ -96,7 +99,7 @@ class CallbackAutoenderRecon(L.Callback):
             batch = transfer_batch_to_device(batch, pl_module.device)
 
             # optional: specify the initial seeds
-            # this is useful to understand the effect of 
+            # this is useful to understand the effect of
             # the training over time
             """
             if self.deterministic_seed:
@@ -116,18 +119,27 @@ class CallbackAutoenderRecon(L.Callback):
             batch_n += 1
             nb_samples += len(image_decoded)
 
-
         # record the first seed so we can restart from the same
         # random state next evaluation
-        #if len(seeds) > 0 and len(self.seeds) == 0:
+        # if len(seeds) > 0 and len(self.seeds) == 0:
         #    self.seeds = seeds
 
         logger.info('Sampling done!')
         output_folder = os.path.join(trainer.options.data.root_current_experiment, self.sampling_folder)
         os.makedirs(output_folder, exist_ok=True)
 
-        export_grid(image_sampled, os.path.join(output_folder, f'e_{trainer.current_epoch}_step_{trainer.global_step}_sampled.png'), nb_samples, save_as_numpy=self.save_numpy)
-        
-        #if len(image_conditioning) > 0:
+        export_grid(
+            image_sampled,
+            os.path.join(output_folder, f'e_{trainer.current_epoch}_step_{trainer.global_step}_sampled.png'),
+            nb_samples,
+            save_as_numpy=self.save_numpy,
+        )
+
+        # if len(image_conditioning) > 0:
         #    export_grid(image_conditioning, os.path.join(output_folder, f'e_{trainer.current_epoch}_step_{trainer.global_step}_conditioning.png'), nb_samples, save_as_numpy=self.save_numpy)
-        export_grid(true_batches, os.path.join(output_folder, f'e_{trainer.current_epoch}_step_{trainer.global_step}_trues.png'), nb_samples, save_as_numpy=self.save_numpy)
+        export_grid(
+            true_batches,
+            os.path.join(output_folder, f'e_{trainer.current_epoch}_step_{trainer.global_step}_trues.png'),
+            nb_samples,
+            save_as_numpy=self.save_numpy,
+        )

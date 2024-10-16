@@ -1,9 +1,10 @@
+import logging
+import time
+
 import lightning as L
 from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
-import time
-from ..trainer.utils import to_value
-import logging
 
+from ..trainer.utils import to_value
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class CallbackLogMetrics(L.Callback):
     """
     Log important metrics for each epoch
     """
+
     def __init__(self) -> None:
         super().__init__()
         self.lowest_metrics = {}
@@ -42,10 +44,12 @@ class CallbackLogMetrics(L.Callback):
     @rank_zero_only
     def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         self.epoch_end_time = time.perf_counter()
+        optimizers = pl_module.optimizers()
+        if not isinstance(optimizers, list):
+            optimizers = [optimizers]
 
-        lr = pl_module.optimizers().param_groups[0]['lr']
-
-        log_str = f'end epoch={trainer.current_epoch}, time={self.epoch_end_time - self.epoch_start_time:.2f}, nb_train_batches={self.nb_train_batches}, total_train_batch_time={self.total_time_train_batch:.2f}, LR={lr}'
+        lrs = [opt.param_groups[0]['lr'] for opt in optimizers]
+        log_str = f'end epoch={trainer.current_epoch}, time={self.epoch_end_time - self.epoch_start_time:.2f}, nb_train_batches={self.nb_train_batches}, total_train_batch_time={self.total_time_train_batch:.2f}, LR={lrs}'
         rank_zero_info(log_str)
         logger.info(log_str)
         self.nb_train_batches = 0

@@ -44,9 +44,15 @@ class Training(SimpleRepr):
 
 
 class Data(SimpleRepr):
-    def __init__(self, root_current_experiment: Optional[str] = None, with_script_directory_prefix: bool = True) -> None:
+    def __init__(
+        self,
+        root_current_experiment: Optional[str] = None,
+        with_script_directory_prefix: bool = True,
+        experiment_name_postfix: str = '',
+    ) -> None:
         self.root_current_experiment = root_current_experiment
         self.with_script_directory_prefix = with_script_directory_prefix
+        self.experiment_name_postfix = experiment_name_postfix
 
 
 class Workflow(SimpleRepr):
