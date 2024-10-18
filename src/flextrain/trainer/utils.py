@@ -45,6 +45,9 @@ def transfer_batch_to_device(
     Returns:
         a batch of data on the specified device
     """
+    if batch is None:
+        return None
+
     if isinstance(batch, torch.Tensor):
         return batch.to(device, non_blocking=non_blocking)
 

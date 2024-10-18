@@ -64,3 +64,14 @@ class ModelAdaptor3to2(nn.Module):
         o = self.base_model(i.squeeze(1))  # we need a copy! (cant use squeeze_)
         assert len(o.shape) == 4, f'expecting NCHW. Got={o.shape}'
         return o.unsqueeze(1)
+
+
+def gradient_fixer(model: nn.Module, posinf: float = 1.0, neginf: float = -1.0) -> None:
+    """
+    Correct the gradient in case there are NaNs or if it is too large so that
+    the model is not catastrophically updated.
+    """
+    with torch.no_grad():
+        for param in model.parameters():
+            if param.grad is not None:
+                torch.nan_to_num(param.grad, nan=0, posinf=posinf, neginf=neginf, out=param.grad)

@@ -4,6 +4,7 @@ from torch import nn
 
 from flextrain.callbacks.epoch_summary import CallbackLogMetrics
 from flextrain.callbacks.gan import CallbackGanRecon
+from flextrain.callbacks.samples import CallbackRecordSamples
 from flextrain.callbacks.skip_epochs import CallbackSkipEpoch
 from flextrain.datasets.mnist import mnist_dataset
 from flextrain.gan.gan_dc import GanDC
@@ -110,6 +111,7 @@ model_pl = GanDC(generator=generator, discriminator=discriminator, image_name='i
 
 callbacks = [
     CallbackLogMetrics(),
+    CallbackRecordSamples(nb_repeat=3, nb_samples=5),
     CallbackSkipEpoch(
         [
             CallbackGanRecon(input_name='images', save_numpy=False),

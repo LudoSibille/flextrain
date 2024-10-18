@@ -110,6 +110,8 @@ class CallbackGanRecon(L.Callback):
                 sample_g_fn = pl_module.sample_g
             else:
                 sample_g_fn = self.model_sample_g_fn
+
+            seed = transfer_batch_to_device(seed, pl_module.device)
             image_decoded = sample_g_fn(batch_size, z=seed, **g_conditional)
             image_sampled.append(self.unnorm_output_fn(image_decoded).detach().cpu())
 

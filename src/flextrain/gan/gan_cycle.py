@@ -1,5 +1,5 @@
 import itertools
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import lightning as L
 import numpy as np
@@ -11,6 +11,7 @@ from ..contrastive.lightning import process_loss_outputs
 from ..losses import LossOutput
 from ..trainer.utils import len_batch
 from ..types import Batch, TorchTensorNX
+from ..layers.utils import gradient_fixer
 
 
 class LambdaLR:
@@ -79,6 +80,10 @@ class GanCycle(L.LightningModule):
         optimizer_params_generator: Dict = get_default_optim_params(),
         optimizer_params_discriminator: Dict = get_default_optim_params(),
         forward_generate_A: bool = False,
+        criterio_gan: nn.Module = torch.nn.MSELoss(),
+        criterion_cycle: nn.Module = torch.nn.L1Loss(),
+        criterion_identity: nn.Module = torch.nn.L1Loss(),
+        gradient_fixer: Optional[Callable[[nn.Module], None]] = gradient_fixer,
     ) -> None:
         super().__init__()
         self.generator_AB = generator_AB
@@ -95,14 +100,15 @@ class GanCycle(L.LightningModule):
         self.lambda_id = lambda_id
         self.optimizer_params_generator = optimizer_params_generator
         self.optimizer_params_discriminator = optimizer_params_discriminator
+        self.gradient_fixer = gradient_fixer
 
         # manual optimization steps: we will handle the
         # optimization, not torch.Lightning
         self.automatic_optimization = False
 
-        self.criterion_gan = torch.nn.MSELoss()
-        self.criterion_cycle = torch.nn.L1Loss()
-        self.criterion_identity = torch.nn.L1Loss()
+        self.criterion_gan = criterio_gan
+        self.criterion_cycle = criterion_cycle
+        self.criterion_identity = criterion_identity
         self.fake_A_buffer = ReplayBuffer()
         self.fake_B_buffer = ReplayBuffer()
 
@@ -114,9 +120,6 @@ class GanCycle(L.LightningModule):
         batch_size = len_batch(batch)
         real_A = batch[self.image_name_A]
         real_B = batch[self.image_name_B]
-
-        # real_label = torch.ones((batch_size, 1), device=self.device, requires_grad=False)
-        # fake_label = torch.zeros((batch_size, 1), device=self.device, requires_grad=False)
 
         real_label = torch.ones((1,), device=self.device, requires_grad=False)
         fake_label = torch.zeros((1,), device=self.device, requires_grad=False)
@@ -154,6 +157,10 @@ class GanCycle(L.LightningModule):
         # loss_G.backward()
         if self.training:
             self.manual_backward(loss_G)
+            if self.gradient_fixer is not None:
+                self.gradient_fixer(self.generator_AB)
+                self.gradient_fixer(self.generator_BA)
+
             optimizer_G.step()
 
         ###########################
@@ -172,6 +179,9 @@ class GanCycle(L.LightningModule):
 
         if self.training:
             self.manual_backward(loss_D_A)
+            if self.gradient_fixer is not None:
+                self.gradient_fixer(self.discriminator_A)
+
             optimizer_D_A.step()
 
         ###########################
@@ -190,6 +200,9 @@ class GanCycle(L.LightningModule):
 
         if self.training:
             self.manual_backward(loss_D_B)
+            if self.gradient_fixer is not None:
+                self.gradient_fixer(self.discriminator_B)
+
             optimizer_D_B.step()
 
         loss_D = (loss_D_A + loss_D_B) / 2

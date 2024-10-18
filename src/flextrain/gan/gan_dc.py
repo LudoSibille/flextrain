@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 
 import lightning as L
 import torch
@@ -6,6 +6,7 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
 
 from ..contrastive.lightning import process_loss_outputs
+from ..layers.utils import gradient_fixer
 from ..losses import LossOutput
 from ..trainer.utils import len_batch
 from ..types import Batch, TorchTensorNX
@@ -25,26 +26,28 @@ class GanDC(L.LightningModule):
         generator: nn.Module,
         discriminator: nn.Module,
         image_name: str,
-        latent_size: int = 100,
         generator_conditional_feature_names: Sequence[str] = (),
         discriminator_conditional_feature_names: Sequence[str] = (),
         optimizer_params: Dict = get_default_optim_params(),
         label_smoothing: float = 0.0,
+        adversarial_loss: nn.Module = torch.nn.BCELoss(),
+        gradient_fixer: Optional[Callable[[nn.Module], None]] = gradient_fixer,
+        z_sampler: Callable[[int], torch.Tensor] = lambda batch_size: torch.randn(batch_size, 100, dtype=torch.float32),
     ) -> None:
         super().__init__()
         self.generator = generator
         self.discriminator = discriminator
         self.image_name = image_name
-        self.latent_size = latent_size
         self.generator_conditional_feature_names = generator_conditional_feature_names
         self.discriminator_conditional_feature_names = discriminator_conditional_feature_names
         self.optimizer_params = optimizer_params
         self.label_smoothing = label_smoothing
+        self.adversarial_loss = adversarial_loss
+        self.gradient_fixer = gradient_fixer
+        self.z_sampler = z_sampler
 
         # manual optimization steps
         self.automatic_optimization = False
-
-        self.adversarial_loss = torch.nn.BCELoss()
 
     def _step(self, batch: Batch) -> TorchTensorNX:
         g_opt, d_opt = self.optimizers()
@@ -52,8 +55,6 @@ class GanDC(L.LightningModule):
 
         batch_size = len_batch(batch)
         X = batch[self.image_name]
-        real_label = torch.full((batch_size, 1), fill_value=1.0 - self.label_smoothing, device=self.device)
-        fake_label = torch.zeros((batch_size, 1), device=self.device)
 
         g_conditional = {n: batch[n] for n in self.generator_conditional_feature_names}
         d_conditional = {n: batch[n] for n in self.discriminator_conditional_feature_names}
@@ -64,6 +65,11 @@ class GanDC(L.LightningModule):
         # Optimize Discriminator #
         ##########################
         d_x = self.discriminator(X, **d_conditional)
+
+        real_label = torch.full(
+            (batch_size, *d_x.shape[1:]), fill_value=1.0 - self.label_smoothing, device=self.device, requires_grad=False
+        )
+        fake_label = torch.zeros((batch_size, *d_x.shape[1:]), device=self.device, requires_grad=False)
         errD_real = self.adversarial_loss(d_x, real_label)
 
         d_g = self.discriminator(g_X.detach(), **d_conditional)
@@ -74,6 +80,8 @@ class GanDC(L.LightningModule):
         if self.training:
             d_opt.zero_grad()
             self.manual_backward(errD)
+            if self.gradient_fixer is not None:
+                self.gradient_fixer(self.generator)
             d_opt.step()
 
         ######################
@@ -85,6 +93,8 @@ class GanDC(L.LightningModule):
         if self.training:
             g_opt.zero_grad()
             self.manual_backward(errG)
+            if self.gradient_fixer is not None:
+                self.gradient_fixer(self.generator)
             g_opt.step()
 
         # Update learning rates (only in training mode)
@@ -121,12 +131,14 @@ class GanDC(L.LightningModule):
         return self.sample_g(batch_size=batch_size, z=z, **generator_kwargs)
 
     def sample_z(self, batch_size: int) -> TorchTensorNX:
-        z = torch.randn(batch_size, self.latent_size, dtype=torch.float32, device=self.device)
-        return z
+        """
+        Mostly useful for the sampling callback
+        """
+        return self.z_sampler(batch_size)
 
     def sample_g(self, batch_size: int, z: Optional[torch.Tensor] = None, **generator_kwargs: Any) -> TorchTensorNX:
         if z is None:
-            z = self.sample_z(batch_size)
+            z = self.sample_z(batch_size=batch_size).to(self.device)
 
         return self.generator(z, **generator_kwargs)
 
